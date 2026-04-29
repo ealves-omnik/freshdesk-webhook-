@@ -2,6 +2,10 @@ import "dotenv/config";
 import express from "express";
 import { createClient } from "@supabase/supabase-js";
 
+// Force stdout flush so Render shows logs immediately
+const _log = console.log.bind(console);
+console.log = (...args) => { _log(...args); process.stdout.write(""); };
+
 const app = express();
 app.use(express.json());
 
