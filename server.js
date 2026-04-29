@@ -124,7 +124,7 @@ async function processTicket(ticket) {
     .filter(Boolean)
     .join("\n\n");
 
-  if (fullText.length < 100) {
+  if (fullText.length < 20) {
     log(`Ticket ${ticketId} has too little content — skipping.`);
     return 0;
   }
