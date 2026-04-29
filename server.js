@@ -2,9 +2,7 @@ import "dotenv/config";
 import express from "express";
 import { createClient } from "@supabase/supabase-js";
 
-// Force stdout flush so Render shows logs immediately
-const _log = console.log.bind(console);
-console.log = (...args) => { _log(...args); process.stdout.write(""); };
+const log = (...args) => process.stderr.write(args.join(" ") + "\n");
 
 const app = express();
 app.use(express.json());
@@ -15,7 +13,7 @@ const supabase = createClient(
 );
 
 // ---------------------------------------------------------------------------
-// Voyage AI — embed a list of texts (1024 dims, same model as the Python RAG)
+// Voyage AI
 // ---------------------------------------------------------------------------
 
 async function embedTexts(texts) {
@@ -38,7 +36,7 @@ async function embedTexts(texts) {
 }
 
 // ---------------------------------------------------------------------------
-// Freshdesk — fetch all conversation messages for a ticket
+// Freshdesk
 // ---------------------------------------------------------------------------
 
 async function fetchConversations(ticketId) {
@@ -52,7 +50,7 @@ async function fetchConversations(ticketId) {
   });
 
   if (!res.ok) {
-    console.warn(`Could not fetch conversations for ticket ${ticketId}: ${res.status}`);
+    log(`Could not fetch conversations for ticket ${ticketId}: ${res.status}`);
     return [];
   }
 
@@ -65,7 +63,7 @@ function stripHtml(html) {
 }
 
 // ---------------------------------------------------------------------------
-// Chunking — split long text into overlapping pieces (same params as Python)
+// Chunking
 // ---------------------------------------------------------------------------
 
 function chunkText(text, chunkSize = 900, overlap = 150) {
@@ -90,7 +88,7 @@ function chunkText(text, chunkSize = 900, overlap = 150) {
 }
 
 // ---------------------------------------------------------------------------
-// Insert chunks into Supabase (same table as the Python indexer)
+// Supabase
 // ---------------------------------------------------------------------------
 
 async function insertChunks(chunks) {
@@ -104,17 +102,20 @@ async function insertChunks(chunks) {
 }
 
 // ---------------------------------------------------------------------------
-// Main pipeline: ticket → text → chunks → embeddings → Supabase
+// Pipeline
 // ---------------------------------------------------------------------------
 
 async function processTicket(ticket) {
-  const ticketId = ticket.id;
-  const title = ticket.subject || `Ticket #${ticketId}`;
-  const description = stripHtml(ticket.description_text || ticket.description || "");
+  const ticketId = ticket.ticket_id || ticket.id;
+  const title = ticket.ticket_subject || ticket.subject || `Ticket #${ticketId}`;
+  const description = stripHtml(
+    ticket.ticket_description || ticket.description_text || ticket.description || ""
+  );
+
+  log(`Processing ticket ${ticketId}: ${title}`);
 
   const conversations = await fetchConversations(ticketId);
 
-  // Build a single text block: title + description + all replies
   const fullText = [
     `Título: ${title}`,
     description,
@@ -124,14 +125,13 @@ async function processTicket(ticket) {
     .join("\n\n");
 
   if (fullText.length < 100) {
-    console.log(`Ticket ${ticketId} has too little content — skipping.`);
+    log(`Ticket ${ticketId} has too little content — skipping.`);
     return 0;
   }
 
   const textChunks = chunkText(fullText);
   const ticketUrl = `https://${process.env.FRESHDESK_DOMAIN}/helpdesk/tickets/${ticketId}`;
 
-  // Embed all chunks (Voyage AI free tier: stay under 10K TPM)
   const embeddings = await embedTexts(textChunks);
 
   const rows = textChunks.map((content, idx) => ({
@@ -143,7 +143,7 @@ async function processTicket(ticket) {
   }));
 
   await insertChunks(rows);
-  console.log(`Ticket ${ticketId} — inserted ${rows.length} chunks.`);
+  log(`Ticket ${ticketId} — inserted ${rows.length} chunks.`);
   return rows.length;
 }
 
@@ -151,18 +151,24 @@ async function processTicket(ticket) {
 // Routes
 // ---------------------------------------------------------------------------
 
-app.get("/health", (_req, res) => res.json({ status: "ok" }));
+app.get("/health", (_req, res) => {
+  log("health check");
+  res.json({ status: "ok" });
+});
 
 app.post("/webhook/freshdesk", async (req, res) => {
-  // Freshdesk sends the ticket inside a "freshdesk_webhook" wrapper
+  log("webhook recebido:", JSON.stringify(req.body));
+
   const payload = req.body.freshdesk_webhook || req.body;
   const ticket = payload.ticket || payload;
 
-  const status = ticket.ticket_status ?? ticket.status;
-  const RESOLVED = 4; // Freshdesk status code for "Resolved"
+  const status = String(ticket.ticket_status || ticket.status || "").toLowerCase();
 
-  if (Number(status) !== RESOLVED) {
-    // Ignore tickets that aren't resolved
+  // Freshdesk envia "Resolved" (string) ou 4 (número)
+  const isResolved = status === "resolved" || Number(status) === 4;
+
+  if (!isResolved) {
+    log(`Ticket ignorado — status: ${status}`);
     return res.json({ ignored: true, status });
   }
 
@@ -170,7 +176,7 @@ app.post("/webhook/freshdesk", async (req, res) => {
     const count = await processTicket(ticket);
     res.json({ ok: true, chunks: count });
   } catch (err) {
-    console.error("Error processing ticket:", err);
+    log("Erro:", err.message);
     res.status(500).json({ error: err.message });
   }
 });
@@ -180,4 +186,4 @@ app.post("/webhook/freshdesk", async (req, res) => {
 // ---------------------------------------------------------------------------
 
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => console.log(`Freshdesk webhook listening on :${PORT}`));
+app.listen(PORT, () => log(`Freshdesk webhook listening on :${PORT}`));
