@@ -165,7 +165,7 @@ app.post("/webhook/freshdesk", async (req, res) => {
   const status = String(ticket.ticket_status || ticket.status || "").toLowerCase();
 
   // Freshdesk envia "Resolved" (string) ou 4 (número)
-  const isResolved = status === "resolved" || Number(status) === 4;
+  const isResolved = status === "resolved" || status === "closed" || Number(status) === 4 || Number(status) === 5;
 
   if (!isResolved) {
     log(`Ticket ignorado — status: ${status}`);
