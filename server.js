@@ -13,22 +13,22 @@ const supabase = createClient(
 );
 
 // ---------------------------------------------------------------------------
-// Voyage AI
+// OpenAI — text-embedding-3-small (1536 dims)
 // ---------------------------------------------------------------------------
 
 async function embedTexts(texts) {
-  const res = await fetch("https://api.voyageai.com/v1/embeddings", {
+  const res = await fetch("https://api.openai.com/v1/embeddings", {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
-      Authorization: `Bearer ${process.env.VOYAGE_API_KEY}`,
+      Authorization: `Bearer ${process.env.OPENAI_API_KEY}`,
     },
-    body: JSON.stringify({ input: texts, model: "voyage-3", input_type: "document" }),
+    body: JSON.stringify({ input: texts, model: "text-embedding-3-small" }),
   });
 
   if (!res.ok) {
     const err = await res.text();
-    throw new Error(`Voyage AI error ${res.status}: ${err}`);
+    throw new Error(`OpenAI error ${res.status}: ${err}`);
   }
 
   const data = await res.json();
